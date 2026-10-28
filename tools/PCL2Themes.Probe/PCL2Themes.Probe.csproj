@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>PCL2Themes.Probe</AssemblyName>
+    <RootNamespace>PCL2Themes.Probe</RootNamespace>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Version>0.1.0</Version>
+    <Company>StarsailsClover</Company>
+    <Product>PCL2Themes probe addon</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="PCL2Swap.Api">
+      <HintPath>..\..\deps\PCL2Swap.Api.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="WindowsBase" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System.Xaml" />
+  </ItemGroup>
+</Project>
