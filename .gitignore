@@ -1,0 +1,15 @@
+# Build outputs
+bin/
+obj/
+dist/
+*.user
+.vs/
+TestResults/
+
+# Local e2e / probe artifacts
+test/
+_probe/
+
+# OS noise
+Thumbs.db
+desktop.ini
