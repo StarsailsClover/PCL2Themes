@@ -183,6 +183,7 @@ namespace PCL2Themes
                 {
                     lines.Add("acrylic=" + _backdrop.AcrylicEnabled);
                     lines.Add("video.element=" + _backdrop.VideoInTree + " source=" + (_backdrop.VideoPath ?? "(none)"));
+                    SampleVideo(lines);
                 }
                 if (_font != null)
                 {
@@ -226,6 +227,16 @@ namespace PCL2Themes
                 _music.PositionSeconds, _music.LyricCount, _music.CurrentLyric ?? "(none)"));
         }
 
+        private void SampleVideo(System.Collections.Generic.List<string> lines)
+        {
+            var video = _backdrop?.VideoElement;
+            if (video == null) return;
+            lines.Add(string.Format(CultureInfo.InvariantCulture,
+                "video.natural={0}x{1} position={2:0.00} opacity={3:0.00}",
+                video.NaturalVideoWidth, video.NaturalVideoHeight, video.Position.TotalSeconds,
+                video.Opacity));
+        }
+
         private void ScheduleMusicSample()
         {
             var dispatcher = Application.Current?.Dispatcher;
@@ -240,6 +251,7 @@ namespace PCL2Themes
                     {
                         var lines = new System.Collections.Generic.List<string>();
                         SampleMusic(lines);
+                        SampleVideo(lines);
                         var path = IOPath.Combine(IOPath.Combine(SwapPaths.DataRoot, "pcl2themes"), "selftest.txt");
                         File.AppendAllLines(path, lines);
                         _api.Log("[themes] 音乐采样：" + string.Join(" | ", lines.ToArray()));

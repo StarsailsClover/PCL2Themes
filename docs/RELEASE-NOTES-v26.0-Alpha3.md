@@ -26,14 +26,18 @@
 
 ## 验证记录（官方 PCL 2.99.0.1，注入形状，隔离副本）
 
+![秋仪金主题 + 视频背景 + 亚克力材质](https://github.com/StarsailsClover/PCL2Themes/releases/download/v26.0-Alpha3/alpha3-theme8-video.png)
+
 ```
 music.track=...\PCL\Musics\probe-tone.wav
 music.position=6.75 lyrics=4 current=probe line 4
 music.position=1.83 lyrics=4 current=probe line 1
+video.natural=320x176 position=1.29 opacity=1.00
 ```
 
 （8 秒测试音频：第一次采样在第 4 行歌词处，循环重播后第二次采样回到第 1 行，
-歌词索引与播放位置严格同步；同一轮自检中主题/宿主路径/亚克力/字体全部 PASS。）
+歌词索引与播放位置严格同步；同一轮自检中主题/宿主路径/亚克力/字体全部 PASS；
+视频背景用真实 MP4 验证自然尺寸与播放位置推进。）
 
 ## 已知限制
 

@@ -41,6 +41,7 @@ namespace PCL2Themes
         public bool AcrylicEnabled => _acrylic;
         public string VideoPath => _videoPath;
         public bool VideoInTree => _video != null && _panBack != null && _panBack.Children.Contains(_video);
+        public MediaElement VideoElement => _video;
 
         public void Start()
         {
