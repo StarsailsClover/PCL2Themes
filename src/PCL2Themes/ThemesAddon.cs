@@ -20,6 +20,7 @@ namespace PCL2Themes
         private ThemeEngine _engine;
         private BackdropEngine _backdrop;
         private FontEngine _font;
+        private MusicEngine _music;
         private SwapContext _context;
 
         public void OnLoad(SwapContext context)
@@ -41,8 +42,9 @@ namespace PCL2Themes
 
                 _backdrop = new BackdropEngine(_api, _engine);
                 _font = new FontEngine(_api);
+                _music = new MusicEngine(_api);
                 _api.Ui.RegisterSettingsPage("com.starsailsclover.pcl2themes.page", "PCL2 Themes",
-                    () => ThemesPage.Build(_api, _engine, _backdrop, _font));
+                    () => ThemesPage.Build(_api, _engine, _backdrop, _font, _music));
 
                 var dispatcher = Application.Current?.Dispatcher;
                 if (dispatcher != null)
@@ -51,6 +53,7 @@ namespace PCL2Themes
                     {
                         _backdrop.Start();
                         _font.Start();
+                        _music.Start();
                     }), DispatcherPriority.ApplicationIdle);
                 }
 
@@ -66,6 +69,7 @@ namespace PCL2Themes
         {
             try { _backdrop?.Stop(); } catch { }
             try { _font?.Stop(); } catch { }
+            try { _music?.Stop(); } catch { }
             try { _engine?.Stop(); } catch { }
             _engine = null;
         }
@@ -119,6 +123,20 @@ namespace PCL2Themes
 
             var font = Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_FONT");
             if (!string.IsNullOrWhiteSpace(font)) _font?.Apply(font);
+
+            if (string.Equals(Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_MUSIC"), "1",
+                    StringComparison.Ordinal))
+            {
+                try
+                {
+                    _api.Reflect.Call(_api.Reflect.HostType("PCL.ModMusic"), "MusicRefreshPlay",
+                        false, false);
+                }
+                catch (Exception ex)
+                {
+                    _api.LogWarning("[music] selftest 启动播放失败：" + ex.Message);
+                }
+            }
         }
 
         private void WriteSelfTest(int expected)
@@ -171,6 +189,12 @@ namespace PCL2Themes
                     lines.Add("font=" + (_font.CurrentFont ?? "(default)"));
                 }
                 lines.Insert(0, "result=" + (ok ? "PASS" : "FAIL"));
+
+                if (string.Equals(Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_MUSIC"), "1",
+                        StringComparison.Ordinal))
+                {
+                    SampleMusic(lines);
+                }
             }
             catch (Exception ex)
             {
@@ -184,11 +208,49 @@ namespace PCL2Themes
                 Directory.CreateDirectory(dir);
                 File.WriteAllLines(IOPath.Combine(dir, "selftest.txt"), lines);
                 _api.Log("[themes] selftest 写入：" + string.Join(" | ", lines.ToArray()));
+                ScheduleMusicSample();
             }
             catch (Exception ex)
             {
                 _api.LogWarning("[themes] selftest 写入失败：" + ex.Message);
             }
+        }
+
+        private void SampleMusic(System.Collections.Generic.List<string> lines)
+        {
+            if (_music == null) return;
+            lines.Add(string.Format(CultureInfo.InvariantCulture,
+                "music.track={0}", _music.CurrentTrack ?? "(none)"));
+            lines.Add(string.Format(CultureInfo.InvariantCulture,
+                "music.position={0:0.00} lyrics={1} current={2}",
+                _music.PositionSeconds, _music.LyricCount, _music.CurrentLyric ?? "(none)"));
+        }
+
+        private void ScheduleMusicSample()
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null) return;
+            dispatcher.BeginInvoke(new Action(() =>
+            {
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                timer.Tick += (sender, args) =>
+                {
+                    timer.Stop();
+                    try
+                    {
+                        var lines = new System.Collections.Generic.List<string>();
+                        SampleMusic(lines);
+                        var path = IOPath.Combine(IOPath.Combine(SwapPaths.DataRoot, "pcl2themes"), "selftest.txt");
+                        File.AppendAllLines(path, lines);
+                        _api.Log("[themes] 音乐采样：" + string.Join(" | ", lines.ToArray()));
+                    }
+                    catch (Exception ex)
+                    {
+                        _api.LogWarning("[themes] 音乐采样失败：" + ex.Message);
+                    }
+                };
+                timer.Start();
+            }), DispatcherPriority.ApplicationIdle);
         }
     }
 }

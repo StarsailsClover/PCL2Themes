@@ -4,6 +4,27 @@
 > `pcl2themes-{PCL2Ver.}-{Ver.}.swapaddon`.
 
 ---
+## 2026.10.29 v26.0-Alpha 3: 歌词与播放器增强
+
+GitCommitHash: tag v26.0-Alpha3
+
+ChangedFiles:
+```
+.\src\PCL2Themes\MusicEngine.cs        歌词解析 + 位置时钟 + 覆盖层 + 播放器助手
+.\src\PCL2Themes\ThemesPage.cs         音乐卡片（上一首/播放暂停/下一首/音量/外部播放器）
+.\src\PCL2Themes\ThemesAddon.cs        音乐引擎装配与音乐自检采样
+.\docs\RELEASE-NOTES-v26.0-Alpha3.md   发布说明
+```
+
+ChangLog:
+Num|File Name|Change Description|Change Time|Changer
+----|----|----|----|----
+1|歌词引擎|同名 .lrc 解析（多时间戳/offset/翻译行），WaveOutEvent 位置时钟，250ms 轮询|2026.10.29|PCL2Themes
+2|歌词覆盖层|窗口底部半透明歌词条，可开关，不拦截交互|2026.10.29|PCL2Themes
+3|播放器增强|上一首/播放暂停/下一首/音量滑条/外部播放器桥接（可指向 Splayer-Next）|2026.10.29|PCL2Themes
+4|验证|2.99.0.1 隔离副本：歌词 4 行、6.75s→第4行、循环后 1.83s→第1行|2026.10.29|PCL2Themes
+
+---
 ## 2026.10.29 v26.0-Alpha 2: 亚克力 / 视频背景 / 字体
 
 GitCommitHash: tag v26.0-Alpha2

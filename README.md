@@ -20,7 +20,7 @@ runs on the `PCL2.dl.swap` runtime (injected and patched shapes) through the pub
 | P0 theme / window / music probe | complete |
 | Theme engine (unlock + presets + live editor) | v26.0-Alpha 1, self-test `PASS` incl. the host call path |
 | Acrylic / video backdrop / fonts | v26.0-Alpha 2, self-test `PASS` |
-| Lyrics + player bridge | planned (v26.0-Alpha 3) |
+| Lyrics + player bridge | v26.0-Alpha 3, lyric clock verified |
 
 See `docs/FACT.md` for the verified host facts and `docs/CHANGELOG.md` for the release history.
 

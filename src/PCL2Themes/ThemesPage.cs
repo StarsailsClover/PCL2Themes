@@ -11,7 +11,7 @@ namespace PCL2Themes
     internal static class ThemesPage
     {
         public static FrameworkElement Build(ISwapApi api, ThemeEngine engine, BackdropEngine backdrop,
-            FontEngine font)
+            FontEngine font, MusicEngine music)
         {
             var panel = new StackPanel { Margin = new Thickness(25, 25, 25, 10) };
             var statusText = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12.5 };
@@ -160,6 +160,41 @@ namespace PCL2Themes
                     }),
                 api.Ui.Buttons(fontButtons.ToArray()),
                 fontStatus));
+
+            // ---------------------------------------------------------------- music
+
+            var musicStatus = new TextBlock
+            {
+                Text = "当前曲目：" + (music?.CurrentTrack == null
+                    ? "（未播放）"
+                    : System.IO.Path.GetFileName(music.CurrentTrack)),
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+
+            panel.Children.Add(api.Ui.Card("音乐与歌词",
+                api.Ui.Buttons(
+                    api.Ui.Button("上一首", () => music?.Previous()),
+                    api.Ui.Button("播放 / 暂停", () => music?.PlayPause()),
+                    api.Ui.Button("下一首", () => music?.Next()),
+                    api.Ui.Button("外部播放器打开", () => music?.OpenInExternalPlayer())),
+                musicStatus,
+                SliderRow("音量", 0, 1000, AddonSettings.GetInt(api.Data, "music.volume", 500),
+                    value => music?.SetVolume((int)value)),
+                api.Ui.CheckBox("显示歌词覆盖层（读取同名 .lrc）", music?.OverlayEnabled ?? true,
+                    value => music?.SetOverlayEnabled(value)),
+                api.Ui.Button("选择外部播放器…", () =>
+                {
+                    var dialog = new Microsoft.Win32.OpenFileDialog
+                    {
+                        Filter = "可执行文件|*.exe|所有文件|*.*",
+                        Title = "选择外部播放器（例如 Splayer-Next）"
+                    };
+                    if (dialog.ShowDialog() != true) return;
+                    music?.SetExternalPlayer(dialog.FileName);
+                    api.Log("[music] 外部播放器：" + dialog.FileName);
+                })));
 
             return panel;
         }
