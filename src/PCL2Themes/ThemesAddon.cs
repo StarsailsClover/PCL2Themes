@@ -18,6 +18,8 @@ namespace PCL2Themes
     {
         private ISwapApi _api;
         private ThemeEngine _engine;
+        private BackdropEngine _backdrop;
+        private FontEngine _font;
         private SwapContext _context;
 
         public void OnLoad(SwapContext context)
@@ -35,8 +37,22 @@ namespace PCL2Themes
             {
                 _engine = new ThemeEngine(_api);
                 _engine.Start(AddonSettings.GetBool(_api.Data, "unlock.all", true));
+                _engine.Applied += id => _backdrop?.OnThemeApplied();
+
+                _backdrop = new BackdropEngine(_api, _engine);
+                _font = new FontEngine(_api);
                 _api.Ui.RegisterSettingsPage("com.starsailsclover.pcl2themes.page", "PCL2 Themes",
-                    () => ThemesPage.Build(_api, _engine));
+                    () => ThemesPage.Build(_api, _engine, _backdrop, _font));
+
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher != null)
+                {
+                    dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        _backdrop.Start();
+                        _font.Start();
+                    }), DispatcherPriority.ApplicationIdle);
+                }
 
                 RunSelfTestIfRequested();
             }
@@ -48,6 +64,8 @@ namespace PCL2Themes
 
         public void OnDisable()
         {
+            try { _backdrop?.Stop(); } catch { }
+            try { _font?.Stop(); } catch { }
             try { _engine?.Stop(); } catch { }
             _engine = null;
         }
@@ -75,6 +93,7 @@ namespace PCL2Themes
                     timer.Stop();
                     try
                     {
+                        ApplySelfTestOverrides();
                         _engine.Apply(target);
                         WriteSelfTest(target);
                     }
@@ -85,6 +104,21 @@ namespace PCL2Themes
                 };
                 timer.Start();
             }), DispatcherPriority.ApplicationIdle);
+        }
+
+        private void ApplySelfTestOverrides()
+        {
+            if (string.Equals(Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_ACRYLIC"), "1",
+                    StringComparison.Ordinal))
+            {
+                _backdrop?.SetAcrylic(true, 50);
+            }
+
+            var video = Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_VIDEO");
+            if (!string.IsNullOrWhiteSpace(video)) _backdrop?.SetVideo(video);
+
+            var font = Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_FONT");
+            if (!string.IsNullOrWhiteSpace(font)) _font?.Apply(font);
         }
 
         private void WriteSelfTest(int expected)
@@ -127,6 +161,15 @@ namespace PCL2Themes
 
                 _engine.Apply(expected);
                 var ok = _engine.CurrentPresetId == expected && hostPath == "PASS";
+                if (_backdrop != null)
+                {
+                    lines.Add("acrylic=" + _backdrop.AcrylicEnabled);
+                    lines.Add("video.element=" + _backdrop.VideoInTree + " source=" + (_backdrop.VideoPath ?? "(none)"));
+                }
+                if (_font != null)
+                {
+                    lines.Add("font=" + (_font.CurrentFont ?? "(default)"));
+                }
                 lines.Insert(0, "result=" + (ok ? "PASS" : "FAIL"));
             }
             catch (Exception ex)

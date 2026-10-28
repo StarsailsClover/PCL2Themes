@@ -19,7 +19,7 @@ runs on the `PCL2.dl.swap` runtime (injected and patched shapes) through the pub
 | Platform compatibility (official PCL 2.99.0.1, injected shape) | verified, `selftest ok=30 fail=0` |
 | P0 theme / window / music probe | complete |
 | Theme engine (unlock + presets + live editor) | v26.0-Alpha 1, self-test `PASS` incl. the host call path |
-| Acrylic / video backdrop | planned (v26.0-Alpha 2) |
+| Acrylic / video backdrop / fonts | v26.0-Alpha 2, self-test `PASS` |
 | Lyrics + player bridge | planned (v26.0-Alpha 3) |
 
 See `docs/FACT.md` for the verified host facts and `docs/CHANGELOG.md` for the release history.

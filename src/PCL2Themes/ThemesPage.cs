@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -9,7 +10,8 @@ namespace PCL2Themes
     /// <summary>Settings page rendered with the host's own card/button builders.</summary>
     internal static class ThemesPage
     {
-        public static FrameworkElement Build(ISwapApi api, ThemeEngine engine)
+        public static FrameworkElement Build(ISwapApi api, ThemeEngine engine, BackdropEngine backdrop,
+            FontEngine font)
         {
             var panel = new StackPanel { Margin = new Thickness(25, 25, 25, 10) };
             var statusText = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12.5 };
@@ -72,7 +74,104 @@ namespace PCL2Themes
                 }),
                 api.Ui.Note("官方启动器 2.99 起把主题解锁逻辑改成了空实现，本开关以模块钩子恢复选择能力。")));
 
+            // ---------------------------------------------------------------- backdrop
+
+            panel.Children.Add(api.Ui.Card("亚克力材质",
+                api.Ui.CheckBox("启用亚克力（半透明主面板）", backdrop?.AcrylicEnabled ?? false, value =>
+                {
+                    backdrop?.SetAcrylic(value, AddonSettings.GetInt(api.Data, "backdrop.strength", 60));
+                    api.Log("[backdrop] 亚克力开关：" + value);
+                }),
+                SliderRow("材质强度", 0, 95, AddonSettings.GetInt(api.Data, "backdrop.strength", 60),
+                    value => backdrop?.SetAcrylic(backdrop.AcrylicEnabled, (int)value)),
+                api.Ui.Note("在壁纸上叠一层主题色调的半透明层；强度越高越透明。")));
+
+            var videoStatus = new TextBlock
+            {
+                Text = "当前视频：" + (backdrop?.VideoPath ?? "（未选择）"),
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+
+            void PickVideo()
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "视频文件|*.mp4;*.wmv;*.avi;*.mkv;*.mov|音频文件|*.mp3;*.wav;*.flac|所有文件|*.*",
+                    Title = "选择背景视频"
+                };
+                if (dialog.ShowDialog() != true) return;
+                backdrop?.SetVideo(dialog.FileName);
+                videoStatus.Text = "当前视频：" + dialog.FileName;
+            }
+
+            panel.Children.Add(api.Ui.Card("视频背景",
+                api.Ui.Buttons(
+                    api.Ui.Button("选择视频…", PickVideo),
+                    api.Ui.Button("清除视频", () =>
+                    {
+                        backdrop?.SetVideo(null);
+                        videoStatus.Text = "当前视频：（未选择）";
+                    }, "Red")),
+                videoStatus,
+                SliderRow("不透明度", 10, 100, AddonSettings.GetInt(api.Data, "backdrop.videoOpacity", 100),
+                    value => backdrop?.SetVideoOpacity((int)value)),
+                api.Ui.CheckBox("静音播放", AddonSettings.GetBool(api.Data, "backdrop.videoMuted", true),
+                    value => backdrop?.SetVideoMuted(value)),
+                api.Ui.Note("视频会铺满窗口并自动裁切（cover），循环播放；仅支持系统解码器可识别的格式。")));
+
+            // ---------------------------------------------------------------- fonts
+
+            var fonts = font?.SystemFonts ?? Array.Empty<string>();
+            var fontStatus = new TextBlock
+            {
+                Text = "当前字体：" + (font?.CurrentFont ?? "（系统默认）"),
+                FontSize = 12,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+
+            var fontButtons = new List<FrameworkElement>();
+            fontButtons.Add(api.Ui.Button("从文件加载…", () =>
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "字体文件|*.ttf;*.otf;*.ttc|所有文件|*.*",
+                    Title = "选择字体文件"
+                };
+                if (dialog.ShowDialog() != true) return;
+                font?.ApplyFromFile(dialog.FileName);
+                fontStatus.Text = "当前字体：" + (font?.CurrentFont ?? "（系统默认）");
+            }));
+            fontButtons.Add(api.Ui.Button("恢复默认字体", () =>
+            {
+                font?.Reset();
+                fontStatus.Text = "当前字体：（系统默认）";
+            }, "Red"));
+
+            panel.Children.Add(api.Ui.Card("字体",
+                api.Ui.Combo("系统字体", fonts,
+                    Math.Max(0, IndexOf(fonts, font?.CurrentFont)),
+                    index =>
+                    {
+                        if (index < 0 || index >= fonts.Count) return;
+                        font?.Apply(fonts[index]);
+                        fontStatus.Text = "当前字体：" + fonts[index];
+                    }),
+                api.Ui.Buttons(fontButtons.ToArray()),
+                fontStatus));
+
             return panel;
+        }
+
+        private static int IndexOf(IReadOnlyList<string> values, string value)
+        {
+            if (value == null) return 0;
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (string.Equals(values[i], value, StringComparison.OrdinalIgnoreCase)) return i;
+            }
+            return 0;
         }
 
         private static FrameworkElement SliderRow(string label, double min, double max, double value,
