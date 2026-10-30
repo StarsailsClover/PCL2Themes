@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using PCL2Swap.Api;
 using IOPath = System.IO.Path;
@@ -34,6 +35,11 @@ namespace PCL2Themes
         public void OnEnable()
         {
             if (_api == null) return;
+            if (!IsSupportedHost(out var reason))
+            {
+                _api.LogWarning("[themes] 宿主不在已验证范围，模块不启用：" + reason);
+                return;
+            }
             try
             {
                 _engine = new ThemeEngine(_api);
@@ -58,6 +64,7 @@ namespace PCL2Themes
                 }
 
                 RunSelfTestIfRequested();
+                ScheduleTeardownTestIfRequested();
             }
             catch (Exception ex)
             {
@@ -67,14 +74,53 @@ namespace PCL2Themes
 
         public void OnDisable()
         {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                // The platform may disable the module from a worker thread; all teardown touches
+                // WPF objects, so run it synchronously on the UI thread.
+                dispatcher.Invoke(new Action(Shutdown), DispatcherPriority.Send);
+            }
+            else
+            {
+                Shutdown();
+            }
+        }
+
+        public void OnUnload() { }
+
+        /// <summary>
+        /// The manifest only expresses the lower bound (hostVersions entries are OR-ed), so the
+        /// upper bound and the 2.99 baseline are enforced here as well.
+        /// </summary>
+        private bool IsSupportedHost(out string reason)
+        {
+            reason = null;
+            var text = _api?.Host?.PclVersion;
+            if (!Version.TryParse(text, out var version)) return true; // unknown version: fail open
+            if (version < new Version(2, 99, 0))
+            {
+                reason = "宿主版本 " + text + " 低于 2.99.0";
+                return false;
+            }
+            if (version.Major >= 3)
+            {
+                reason = "宿主主版本 " + version.Major + " 尚未验证";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>Undo every visible change so a disabled module leaves the host as it was.</summary>
+        private void Shutdown()
+        {
             try { _backdrop?.Stop(); } catch { }
             try { _font?.Stop(); } catch { }
             try { _music?.Stop(); } catch { }
             try { _engine?.Stop(); } catch { }
             _engine = null;
+            _api?.Log("[themes] 模块已停用，视觉改动已还原");
         }
-
-        public void OnUnload() { }
 
         private void RunSelfTestIfRequested()
         {
@@ -189,6 +235,32 @@ namespace PCL2Themes
                 {
                     lines.Add("font=" + (_font.CurrentFont ?? "(default)"));
                 }
+
+                try
+                {
+                    var pageRoot = ThemesPage.Build(_api, _engine, _backdrop, _font, _music);
+                    lines.Add("page.root=" + pageRoot.GetType().Name +
+                              " scroll=" + (pageRoot is ScrollViewer));
+                    lines.Add("fonts.count=" + FontEngine.SystemFonts.Count.ToString(CultureInfo.InvariantCulture));
+                }
+                catch (Exception ex)
+                {
+                    lines.Add("page.root=ERROR " + ex.Message);
+                }
+
+                if (string.Equals(Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_PAGE_RENDER"), "1",
+                        StringComparison.Ordinal))
+                {
+                    try
+                    {
+                        RenderPageToFile(ThemesPage.Build(_api, _engine, _backdrop, _font, _music));
+                        lines.Add("page.render=scheduled");
+                    }
+                    catch (Exception ex)
+                    {
+                        lines.Add("page.render=ERROR " + ex.Message);
+                    }
+                }
                 lines.Insert(0, "result=" + (ok ? "PASS" : "FAIL"));
 
                 if (string.Equals(Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_MUSIC"), "1",
@@ -263,6 +335,122 @@ namespace PCL2Themes
                 };
                 timer.Start();
             }), DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>
+        /// Self-test for the disable path: waits for the normal checks, runs the same teardown
+        /// as a module toggle and records whether every visible change was rolled back.
+        /// </summary>
+        private void ScheduleTeardownTestIfRequested()
+        {
+            if (!string.Equals(Environment.GetEnvironmentVariable("PCL2THEMES_SELFTEST_TEARDOWN"), "1",
+                    StringComparison.Ordinal)) return;
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null) return;
+            dispatcher.BeginInvoke(new Action(() =>
+            {
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
+                timer.Tick += (sender, args) =>
+                {
+                    timer.Stop();
+                    var lines = new System.Collections.Generic.List<string>();
+                    try
+                    {
+                        Shutdown();
+                        lines.Add("phase=teardown");
+                        lines.Add("acrylic=" + (_backdrop?.AcrylicEnabled ?? false));
+                        lines.Add("video.inTree=" + (_backdrop?.VideoInTree ?? false));
+                        lines.Add("overlay.inTree=" + (_music?.OverlayInTree ?? false));
+                        lines.Add("font=" + (_font?.CurrentFont ?? "(default)"));
+
+                        var window = Application.Current?.MainWindow;
+                        var panForm = window?.FindName("PanForm") as Panel;
+                        lines.Add("panForm.background=" + (panForm?.Background?.GetType().Name ?? "(null)"));
+                        var imgBack = window?.FindName("ImgBack") as FrameworkElement;
+                        lines.Add("imgBack.visibility=" + (imgBack?.Visibility.ToString() ?? "(null)"));
+                        lines.Add("imgBack.original=" + (_backdrop?.ImgBackOriginalVisibility.ToString() ?? "(null)"));
+
+                        var ok = !(_backdrop?.AcrylicEnabled ?? false) &&
+                                 !(_backdrop?.VideoInTree ?? false) &&
+                                 !(_music?.OverlayInTree ?? false) &&
+                                 string.IsNullOrEmpty(_font?.CurrentFont) &&
+                                 !(panForm?.Background is SolidColorBrush);
+                        lines.Insert(0, "result=" + (ok ? "PASS" : "FAIL"));
+                    }
+                    catch (Exception ex)
+                    {
+                        lines.Insert(0, "result=ERROR");
+                        lines.Add(ex.ToString());
+                    }
+
+                    try
+                    {
+                        var dir = IOPath.Combine(SwapPaths.DataRoot, "pcl2themes");
+                        Directory.CreateDirectory(dir);
+                        File.WriteAllLines(IOPath.Combine(dir, "teardown.txt"), lines);
+                        _api?.Log("[themes] teardown 写入：" + string.Join(" | ", lines.ToArray()));
+                    }
+                    catch (Exception ex)
+                    {
+                        _api?.LogWarning("[themes] teardown 写入失败：" + ex.Message);
+                    }
+                };
+                timer.Start();
+            }), DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>
+        /// Hosts the settings page in an off-screen window, lets the host's card/title animations
+        /// run, then renders it. A pure off-screen RenderTargetBitmap runs before MyCard's title
+        /// animation starts and would make the titles look missing.
+        /// </summary>
+        private void RenderPageToFile(FrameworkElement pageRoot)
+        {
+            var dir = IOPath.Combine(SwapPaths.DataRoot, "pcl2themes");
+            Directory.CreateDirectory(dir);
+
+            var host = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Title = "PCL2Themes UI Test",
+                Content = pageRoot,
+                ShowInTaskbar = false,
+                WindowStyle = WindowStyle.ToolWindow,
+                Left = -10000,
+                Top = -10000
+            };
+            host.Show();
+            host.UpdateLayout();
+
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            timer.Tick += (sender, args) =>
+            {
+                timer.Stop();
+                try
+                {
+                    pageRoot.UpdateLayout();
+                    var bitmap = new RenderTargetBitmap(900, 700, 96, 96, PixelFormats.Pbgra32);
+                    bitmap.Render(pageRoot);
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using (var stream = File.Create(IOPath.Combine(dir, "page.png")))
+                    {
+                        encoder.Save(stream);
+                    }
+                    _api.Log("[themes] 设置页渲染：" + IOPath.Combine(dir, "page.png"));
+                }
+                catch (Exception ex)
+                {
+                    _api.LogWarning("[themes] 设置页渲染失败：" + ex.Message);
+                }
+                finally
+                {
+                    try { host.Close(); } catch { }
+                }
+            };
+            timer.Start();
         }
     }
 }

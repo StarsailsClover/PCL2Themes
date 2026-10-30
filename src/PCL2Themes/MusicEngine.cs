@@ -28,8 +28,10 @@ namespace PCL2Themes
         private DispatcherTimer _timer;
         private FrameworkElement _overlay;
         private TextBlock _overlayText;
+        private Panel _overlayHost;
 
         private string _track;
+        private string _state = "Stop";
         private List<LyricLine> _lyrics = new List<LyricLine>();
         private int _lyricIndex = -1;
         private double _positionSeconds;
@@ -47,12 +49,17 @@ namespace PCL2Themes
             _api = api;
         }
 
+        public event Action Changed;
+
         public string CurrentTrack => _track;
+        public string PlayState => _state;
         public double PositionSeconds => _positionSeconds;
         public int LyricCount => _lyrics.Count;
         public string CurrentLyric =>
             _lyricIndex >= 0 && _lyricIndex < _lyrics.Count ? _lyrics[_lyricIndex].Text : null;
         public bool OverlayEnabled { get; private set; } = true;
+        public bool OverlayInTree => _overlay != null && _overlayHost != null &&
+                                     _overlayHost.Children.Contains(_overlay);
 
         public void Start()
         {
@@ -82,20 +89,29 @@ namespace PCL2Themes
                 _timer.Stop();
                 _timer = null;
             }
+            RemoveOverlay();
         }
 
         public void SetOverlayEnabled(bool enabled)
         {
             OverlayEnabled = enabled;
             AddonSettings.SetBool(_api.Data, "lyrics.overlay", enabled);
+            if (enabled) EnsureOverlay();
             if (_overlay != null) _overlay.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+            if (!enabled) ClearOverlayText();
+            Changed?.Invoke();
         }
 
         public void PlayPause()
         {
             var state = GetMember("MusicState")?.ToString();
             if (string.Equals(state, "Play", StringComparison.Ordinal)) Call("MusicPause");
-            else Call("MusicResume");
+            else if (string.Equals(state, "Pause", StringComparison.Ordinal)) Call("MusicResume");
+            else
+            {
+                // Stop state: ask the host to (re)start the playlist instead of showing a warning.
+                Call("MusicRefreshPlay", false, false);
+            }
         }
 
         public void Next() => Call("MusicControlNext");
@@ -115,9 +131,10 @@ namespace PCL2Themes
         {
             try
             {
-                _api.Pcl.Settings.Set("UiMusicVolume", Math.Max(0, Math.Min(1000, volume)));
-                AddonSettings.SetInt(_api.Data, "music.volume",
-                    Math.Max(0, Math.Min(1000, volume)));
+                var clamped = Math.Max(0, Math.Min(1000, volume));
+                _api.Pcl.Settings.Set("UiMusicVolume", clamped);
+                AddonSettings.SetInt(_api.Data, "music.volume", clamped);
+                Changed?.Invoke();
             }
             catch (Exception ex)
             {
@@ -128,8 +145,11 @@ namespace PCL2Themes
         public string ExternalPlayerPath =>
             AddonSettings.GetString(_api.Data, "music.externalPlayer", null);
 
-        public void SetExternalPlayer(string path) =>
+        public void SetExternalPlayer(string path)
+        {
             AddonSettings.SetString(_api.Data, "music.externalPlayer", path);
+            Changed?.Invoke();
+        }
 
         public void OpenInExternalPlayer()
         {
@@ -155,6 +175,10 @@ namespace PCL2Themes
         {
             try
             {
+                if (_music == null) return;
+                if (_overlay == null) EnsureOverlay();
+
+                _state = GetMember("MusicState")?.ToString() ?? "Stop";
                 var track = _api.Reflect.GetMember(_music, "MusicCurrent") as string;
                 if (!string.Equals(track, _track, StringComparison.OrdinalIgnoreCase))
                 {
@@ -167,6 +191,7 @@ namespace PCL2Themes
                         if (_history.Count > 64) _history.RemoveAt(0);
                         _api.Log($"[music] 曲目切换：{Path.GetFileName(track)}，歌词 {_lyrics.Count} 行");
                     }
+                    Changed?.Invoke();
                 }
 
                 _positionSeconds = ReadPositionSeconds();
@@ -189,9 +214,12 @@ namespace PCL2Themes
             if (position == null || format == null) return 0;
 
             var formatType = format.GetType();
-            var rate = Convert.ToDouble(formatType.GetProperty("SampleRate")?.GetValue(format, null) ?? 0d);
-            var channels = Convert.ToDouble(formatType.GetProperty("Channels")?.GetValue(format, null) ?? 0d);
-            var bits = Convert.ToDouble(formatType.GetProperty("BitsPerSample")?.GetValue(format, null) ?? 0d);
+            var rate = Convert.ToDouble(formatType.GetProperty("SampleRate")?.GetValue(format, null) ?? 0d,
+                CultureInfo.InvariantCulture);
+            var channels = Convert.ToDouble(formatType.GetProperty("Channels")?.GetValue(format, null) ?? 0d,
+                CultureInfo.InvariantCulture);
+            var bits = Convert.ToDouble(formatType.GetProperty("BitsPerSample")?.GetValue(format, null) ?? 0d,
+                CultureInfo.InvariantCulture);
             var bytesPerSecond = rate * channels * bits / 8.0;
             if (bytesPerSecond <= 0) return 0;
             return Convert.ToDouble(position, CultureInfo.InvariantCulture) / bytesPerSecond;
@@ -212,15 +240,22 @@ namespace PCL2Themes
         private void UpdateOverlay()
         {
             if (_overlayText == null || _overlay == null) return;
-            if (!OverlayEnabled || _lyrics.Count == 0)
+            var playing = string.Equals(_state, "Play", StringComparison.Ordinal) ||
+                          string.Equals(_state, "Pause", StringComparison.Ordinal);
+            if (!OverlayEnabled || !playing || _lyrics.Count == 0)
             {
-                _overlayText.Text = string.Empty;
+                ClearOverlayText();
                 return;
             }
             var line = _lyricIndex >= 0 && _lyricIndex < _lyrics.Count ? _lyrics[_lyricIndex] : null;
             var text = line?.Text ?? string.Empty;
             if (!string.IsNullOrEmpty(line?.Translation)) text += "\n" + line.Translation;
             if (_overlayText.Text != text) _overlayText.Text = text;
+        }
+
+        private void ClearOverlayText()
+        {
+            if (_overlayText != null && _overlayText.Text.Length > 0) _overlayText.Text = string.Empty;
         }
 
         private void EnsureOverlay()
@@ -241,7 +276,7 @@ namespace PCL2Themes
                         TextWrapping = TextWrapping.Wrap,
                         MaxWidth = 720
                     };
-                    var border = new Border
+                    _overlay = new Border
                     {
                         Background = new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)),
                         CornerRadius = new CornerRadius(6),
@@ -253,15 +288,30 @@ namespace PCL2Themes
                         Child = _overlayText,
                         Visibility = OverlayEnabled ? Visibility.Visible : Visibility.Collapsed
                     };
-                    _overlay = border;
                 }
 
-                if (!panBack.Children.Contains(_overlay)) panBack.Children.Add(_overlay);
+                if (_overlayHost != panBack)
+                {
+                    RemoveOverlay();
+                    _overlayHost = panBack;
+                }
+                if (!_overlayHost.Children.Contains(_overlay)) _overlayHost.Children.Add(_overlay);
             }
             catch (Exception ex)
             {
                 _api.LogWarning("[music] 歌词覆盖层创建失败：" + ex.Message);
             }
+        }
+
+        private void RemoveOverlay()
+        {
+            try
+            {
+                if (_overlay != null && _overlayHost != null) _overlayHost.Children.Remove(_overlay);
+            }
+            catch { }
+            _overlayHost = null;
+            ClearOverlayText();
         }
 
         private List<LyricLine> LoadLyrics(string trackPath)

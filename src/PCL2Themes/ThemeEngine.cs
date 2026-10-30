@@ -31,6 +31,7 @@ namespace PCL2Themes
         private IDisposable _checkHook;
         private IDisposable _refreshHook;
         private DispatcherTimer _dynamicTimer;
+        private DispatcherTimer _lateApply;
         private int _dynamicHue;
 
         public ThemeEngine(ISwapApi api)
@@ -71,7 +72,30 @@ namespace PCL2Themes
             // resources, so the first application always hops onto the dispatcher.
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher == null) Apply(initial);
-            else dispatcher.BeginInvoke(new Action(() => Apply(initial)), DispatcherPriority.ApplicationIdle);
+            else
+            {
+                dispatcher.BeginInvoke(new Action(() =>
+                {
+                    Apply(initial);
+
+                    // ThemeRefreshMain only repaints once FormMain is loaded; re-apply after the
+                    // first frames so the title-bar gradient follows the saved theme too.
+                    _lateApply = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+                    {
+                        Interval = TimeSpan.FromSeconds(3)
+                    };
+                    _lateApply.Tick += (sender, args) =>
+                    {
+                        if (_lateApply != null)
+                        {
+                            _lateApply.Stop();
+                            _lateApply = null;
+                        }
+                        Apply(CurrentPresetId);
+                    };
+                    _lateApply.Start();
+                }), DispatcherPriority.ApplicationIdle);
+            }
         }
 
         public void Stop()
@@ -79,6 +103,11 @@ namespace PCL2Themes
             Dispose(ref _refreshHook);
             Dispose(ref _checkHook);
             StopDynamic();
+            if (_lateApply != null)
+            {
+                _lateApply.Stop();
+                _lateApply = null;
+            }
         }
 
         public void SetUnlockAll(bool enabled)

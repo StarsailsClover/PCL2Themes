@@ -6,7 +6,7 @@
     <RootNamespace>PCL2Themes</RootNamespace>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>26.0.1</Version>
+    <Version>26.0.4</Version>
     <Company>StarsailsClover</Company>
     <Product>PCL2Themes</Product>
   </PropertyGroup>

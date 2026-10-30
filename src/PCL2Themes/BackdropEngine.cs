@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using PCL2Swap.Api;
 
 namespace PCL2Themes
@@ -22,7 +23,10 @@ namespace PCL2Themes
         private Panel _panBack;
         private Panel _panForm;
         private Border _panMainLeft;
-        private Visibility _imgBackVisibility = Visibility.Visible;
+
+        private Visibility _imgBackOriginalVisibility = Visibility.Visible;
+        private Brush _panMainLeftOriginalBrush;
+        private bool _originalsCaptured;
 
         private MediaElement _video;
         private bool _acrylic;
@@ -31,6 +35,8 @@ namespace PCL2Themes
         private int _videoOpacity = 100;
         private bool _videoMuted = true;
         private bool _applyingAcrylic;
+        private DispatcherTimer _startRetry;
+        private int _startAttempts;
 
         public BackdropEngine(ISwapApi api, ThemeEngine theme)
         {
@@ -38,20 +44,43 @@ namespace PCL2Themes
             _theme = theme;
         }
 
+        public event Action Changed;
+
         public bool AcrylicEnabled => _acrylic;
+        public int Strength => _strength;
         public string VideoPath => _videoPath;
         public bool VideoInTree => _video != null && _panBack != null && _panBack.Children.Contains(_video);
         public MediaElement VideoElement => _video;
+        public Visibility ImgBackOriginalVisibility => _imgBackOriginalVisibility;
 
         public void Start()
         {
             _window = Application.Current?.MainWindow;
-            if (_window == null) return;
+            if (_window == null)
+            {
+                // The addon can enable before FormMain exists; retry instead of silently dying.
+                if (_startAttempts++ >= 15) return;
+                var dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+                _startRetry = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+                {
+                    Interval = TimeSpan.FromSeconds(1)
+                };
+                _startRetry.Tick += (sender, args) =>
+                {
+                    if (_startRetry == null) return;
+                    _startRetry.Stop();
+                    _startRetry = null;
+                    Start();
+                };
+                _startRetry.Start();
+                return;
+            }
 
             _imgBack = _window.FindName("ImgBack") as FrameworkElement;
             _panBack = _window.FindName("PanBack") as Panel;
             _panForm = _window.FindName("PanForm") as Panel;
             _panMainLeft = _window.FindName("PanMainLeft") as Border;
+            CaptureOriginals();
 
             _acrylic = AddonSettings.GetBool(_api.Data, "backdrop.acrylic", false);
             _strength = AddonSettings.GetInt(_api.Data, "backdrop.strength", 60);
@@ -64,6 +93,15 @@ namespace PCL2Themes
             _api.Log($"[backdrop] 初始化 acrylic={_acrylic} strength={_strength} video={_videoPath ?? "(none)"}");
         }
 
+        /// <summary>Remembers what the host looked like before the module touched anything.</summary>
+        private void CaptureOriginals()
+        {
+            if (_originalsCaptured) return;
+            if (_imgBack != null) _imgBackOriginalVisibility = _imgBack.Visibility;
+            if (_panMainLeft != null) _panMainLeftOriginalBrush = _panMainLeft.Background;
+            _originalsCaptured = true;
+        }
+
         public void SetAcrylic(bool enabled, int strength)
         {
             _acrylic = enabled;
@@ -71,6 +109,7 @@ namespace PCL2Themes
             AddonSettings.SetBool(_api.Data, "backdrop.acrylic", enabled);
             AddonSettings.SetInt(_api.Data, "backdrop.strength", _strength);
             ApplyAcrylic();
+            Changed?.Invoke();
         }
 
         public void SetVideo(string path)
@@ -78,6 +117,7 @@ namespace PCL2Themes
             _videoPath = string.IsNullOrWhiteSpace(path) ? null : path;
             AddonSettings.SetString(_api.Data, "backdrop.video", _videoPath);
             ApplyVideo();
+            Changed?.Invoke();
         }
 
         public void SetVideoOpacity(int opacity)
@@ -85,6 +125,7 @@ namespace PCL2Themes
             _videoOpacity = Math.Max(10, Math.Min(100, opacity));
             AddonSettings.SetInt(_api.Data, "backdrop.videoOpacity", _videoOpacity);
             if (_video != null) _video.Opacity = _videoOpacity / 100.0;
+            Changed?.Invoke();
         }
 
         public void SetVideoMuted(bool muted)
@@ -92,6 +133,7 @@ namespace PCL2Themes
             _videoMuted = muted;
             AddonSettings.SetBool(_api.Data, "backdrop.videoMuted", muted);
             if (_video != null) _video.IsMuted = muted;
+            Changed?.Invoke();
         }
 
         /// <summary>Theme repaints PanForm, so acrylic has to be re-applied afterwards.</summary>
@@ -101,9 +143,22 @@ namespace PCL2Themes
             ApplyAcrylic();
         }
 
+        /// <summary>Undo everything this engine changed and release the video layer.</summary>
         public void Stop()
         {
-            TeardownVideo();
+            try
+            {
+                if (_acrylic)
+                {
+                    _acrylic = false;
+                    ApplyAcrylic();
+                }
+                TeardownVideo(restoreWallpaper: true);
+            }
+            catch (Exception ex)
+            {
+                _api.LogWarning("[backdrop] 还原失败：" + ex.Message);
+            }
         }
 
         private void ApplyAcrylic()
@@ -130,7 +185,9 @@ namespace PCL2Themes
                 }
                 else
                 {
-                    // Repaint with the current theme so the host background comes back untouched.
+                    // Repaint with the current theme so the host background comes back untouched,
+                    // then hand the sidebar its original brush.
+                    if (_panMainLeft != null) _panMainLeft.Background = _panMainLeftOriginalBrush;
                     _theme.Apply(_theme.CurrentPresetId);
                     _api.Log("[backdrop] 亚克力已关闭，恢复主题背景");
                 }
@@ -161,7 +218,7 @@ namespace PCL2Themes
             {
                 if (string.IsNullOrEmpty(_videoPath))
                 {
-                    TeardownVideo();
+                    TeardownVideo(restoreWallpaper: true);
                     return;
                 }
 
@@ -203,11 +260,9 @@ namespace PCL2Themes
                     _panBack.Children.Insert(index, _video);
                 }
 
-                if (_imgBack != null)
-                {
-                    _imgBackVisibility = _imgBack.Visibility;
-                    _imgBack.Visibility = Visibility.Collapsed;
-                }
+                // Never re-read the wallpaper visibility here: a second call would capture the
+                // already-collapsed state and the wallpaper could never come back.
+                if (_imgBack != null) _imgBack.Visibility = Visibility.Collapsed;
 
                 var uri = new Uri(_videoPath, UriKind.Absolute);
                 if (_video.Source == null || _video.Source != uri)
@@ -226,7 +281,7 @@ namespace PCL2Themes
             }
         }
 
-        private void TeardownVideo()
+        private void TeardownVideo(bool restoreWallpaper)
         {
             try
             {
@@ -236,9 +291,9 @@ namespace PCL2Themes
                     _video.Source = null;
                     _panBack?.Children.Remove(_video);
                 }
-                if (_imgBack != null && _imgBack.Visibility != _imgBackVisibility)
+                if (restoreWallpaper && _imgBack != null && _imgBack.Visibility != _imgBackOriginalVisibility)
                 {
-                    _imgBack.Visibility = _imgBackVisibility;
+                    _imgBack.Visibility = _imgBackOriginalVisibility;
                 }
             }
             catch (Exception ex)

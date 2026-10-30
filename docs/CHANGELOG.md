@@ -4,6 +4,36 @@
 > `pcl2themes-{PCL2Ver.}-{Ver.}.swapaddon`.
 
 ---
+## 2026.10.30 v26.0-Alpha 4: 分发包实测自审修复（UI / 交互 / 事件 / 打包）
+
+GitCommitHash: tag v26.0-Alpha4
+
+ChangedFiles:
+```
+.\src\PCL2Themes\ThemesPage.cs       MyScrollViewer 滚动容器、状态订阅、按钮网格、滑条防抖、字体默认项、视频总开关
+.\src\PCL2Themes\BackdropEngine.cs   原始可见性/侧栏画刷只捕获一次、Stop 完整还原、Changed 事件、启动重试
+.\src\PCL2Themes\FontEngine.cs       字体缓存、差异写入、文件字体保留 FontFamily、停用恢复默认
+.\src\PCL2Themes\MusicEngine.cs      停止隐藏歌词、停用移除覆盖层、Stop 状态可播放、Changed 事件
+.\src\PCL2Themes\ThemeEngine.cs      窗口加载后补一次主题重绘
+.\src\PCL2Themes\ThemesAddon.cs      UI 线程同步停用、teardown/页面渲染自检、宿主版本护栏
+.\scripts\build.ps1                  VERSION 文件、完整 manifest 参数、打包后校验
+.\VERSION                            v26.0-Alpha 4
+.\docs\RELEASE-NOTES-v26.0-Alpha4.md 发布说明
+```
+
+ChangLog:
+Num|File Name|Change Description|Change Time|Changer
+----|----|----|----|----
+1|UI 滚动|页面根改为宿主 `PCL.MyScrollViewer`，长页面可滚动（自检 page.root=MyScrollViewer）|2026.10.30|PCL2Themes
+2|UI 状态|主题/背景/字体/音乐状态实时刷新，离开页面退订|2026.10.30|PCL2Themes
+3|交互|所有滑条 150ms 防抖，消除每帧重算与设置写入风暴|2026.10.30|PCL2Themes
+4|字体|字体列表缓存、差异写入、文件字体修复、停用恢复默认|2026.10.30|PCL2Themes
+5|事件|视频壁纸可见性只捕获一次；停用完整还原亚克力/视频/字体/歌词；后台线程停用自动切 UI|2026.10.30|PCL2Themes
+6|音乐|Stop 状态隐藏歌词、停用移除覆盖层、播放按钮可重新开始队列|2026.10.30|PCL2Themes
+7|打包|修复 manifest 版本一直为 Alpha 1 的缺陷；补齐 shapes/hostVersions/permissions 并打包后校验|2026.10.30|PCL2Themes
+8|验证|2.99.0.1 全量自检 PASS + teardown PASS + 设置页真实渲染通过|2026.10.30|PCL2Themes
+
+---
 ## 2026.10.29 v26.0-Alpha 3: 歌词与播放器增强
 
 GitCommitHash: tag v26.0-Alpha3
